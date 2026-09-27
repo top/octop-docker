@@ -1,7 +1,7 @@
 # octop-docker
 
 Automated **multi-arch** Docker Hub images for
-[TencentCloud/Octop](https://github.com/TencentCloud/Octop).
+[TencentCloud/Octop](https://github.com/TencentCloud/Octop). Target docker repo: [tozp/octop](https://hub.docker.com/r/tozp/octop).
 
 Upstream's official workflow only builds `linux/amd64`. This repo additionally
 builds `linux/arm64` and publishes to Docker Hub, so ARM devices (Raspberry Pi,
@@ -58,7 +58,7 @@ for all environment variables.
 
 ## Setup
 
-1. Create an empty **public** repo `top/octop-docker` on GitHub and push these files.
+1. Create an empty **public** repo `tozp/octop-docker` on GitHub and push these files.
    (Public repos get unlimited free Actions minutes; a private repo's free quota
    can be eaten up by the long multi-arch builds.)
 2. Docker Hub > Account Settings > Security > Personal access tokens > Generate
