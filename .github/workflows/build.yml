@@ -1,0 +1,163 @@
+name: Build multi-arch images
+
+# Weekly check of upstream TencentCloud/Octop releases.
+# Builds linux/amd64 + linux/arm64 images and pushes them to Docker Hub
+# only when a new upstream release is found.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   DOCKERHUB_USERNAME - Docker Hub username, also used as the image namespace
+#   DOCKERHUB_TOKEN    - Docker Hub access token with Read & Write permissions
+#                        (Docker Hub > Account Settings > Security > Personal access tokens)
+
+on:
+  schedule:
+    # Every Monday 09:00 MDT (15:00 UTC)
+    - cron: "0 15 * * 1"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Upstream tag to build, e.g. v1.0.2 (empty = latest release)"
+        required: false
+        default: ""
+      force:
+        description: "Rebuild even if the version is unchanged"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write # write back LAST_BUILD with the built version
+
+concurrency:
+  group: octop-docker-build
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: TencentCloud/Octop
+  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/octop
+
+jobs:
+  check:
+    name: Check upstream release
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+      tag: ${{ steps.decide.outputs.tag }}
+      version: ${{ steps.decide.outputs.version }}
+      is_latest: ${{ steps.decide.outputs.is_latest }}
+    steps:
+      - name: Checkout this repo
+        uses: actions/checkout@v4
+
+      - name: Resolve upstream tag
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api "repos/$UPSTREAM_REPO/releases/latest" --jq .tag_name)"
+          echo "latest upstream release: $latest"
+
+          if [ -n "${{ inputs.tag }}" ]; then
+            tag="${{ inputs.tag }}"
+          else
+            tag="$latest"
+          fi
+          # Allow a version without the leading "v"
+          case "$tag" in v*) ;; *) tag="v$tag";; esac
+
+          last_built="$(cat LAST_BUILD 2>/dev/null || echo none)"
+          echo "last built: $last_built"
+
+          should_build=true
+          if [ -z "${{ inputs.tag }}" ] && [ "${{ inputs.force }}" != "true" ] && [ "$tag" = "$last_built" ]; then
+            should_build=false
+          fi
+
+          {
+            echo "should_build=$should_build"
+            echo "tag=$tag"
+            echo "version=${tag#v}"
+            if [ "$tag" = "$latest" ]; then echo "is_latest=true"; else echo "is_latest=false"; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip notice
+        if: steps.decide.outputs.should_build != 'true'
+        run: echo "Upstream ${{ steps.decide.outputs.tag }} already built, skipping."
+
+  build:
+    name: Build and push ${{ needs.check.outputs.tag }}
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Docker Hub secrets
+        run: |
+          if [ -z "${{ secrets.DOCKERHUB_USERNAME }}" ] || [ -z "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "::error::Missing DOCKERHUB_USERNAME / DOCKERHUB_TOKEN repository secrets."
+            echo "::error::See the workflow header comments and README for setup instructions."
+            exit 1
+          fi
+
+      - name: Checkout upstream at tag
+        uses: actions/checkout@v4
+        with:
+          repository: TencentCloud/Octop
+          ref: ${{ needs.check.outputs.tag }}
+          path: upstream
+          fetch-depth: 1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute tags
+        id: tags
+        run: |
+          tags="${{ env.IMAGE }}:${{ needs.check.outputs.version }}"
+          if [ "${{ needs.check.outputs.is_latest }}" = "true" ]; then
+            tags="$tags
+          ${{ env.IMAGE }}:latest"
+          fi
+          {
+            echo "value<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./upstream
+          file: ./upstream/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Checkout this repo (for version record)
+        uses: actions/checkout@v4
+        with:
+          path: meta
+
+      - name: Record built version
+        # Only update the record when building the latest upstream release;
+        # manually building an older tag must not overwrite it.
+        if: needs.check.outputs.is_latest == 'true'
+        run: |
+          cd meta
+          echo "${{ needs.check.outputs.tag }}" > LAST_BUILD
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add LAST_BUILD
+          git diff --cached --quiet || git commit -m "chore: built upstream ${{ needs.check.outputs.tag }}"
+          git push
