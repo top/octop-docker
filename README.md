@@ -48,13 +48,13 @@ for all environment variables.
 
 ## How it works
 
-1. Runs on schedule every Monday 09:00 MDT (15:00 UTC); can also be triggered manually.
+1. Runs automatically on schedule every hour (at minute 20); can also be triggered manually anytime.
 2. Queries the latest upstream GitHub Release and compares it with the `LAST_BUILD`
    file in this repo.
-3. Only builds when a new version is found: checks out upstream at that tag and
+3. Automatically builds when a new version is found: checks out upstream at that tag,
    builds `linux/amd64,linux/arm64` with upstream's own `docker/Dockerfile`,
-   then pushes to Docker Hub.
-4. On success, writes the new version back to `LAST_BUILD` so the next run skips it.
+   and pushes to Docker Hub.
+4. On success, writes the new version back to `LAST_BUILD` so subsequent hourly checks skip it.
 
 ## Setup
 
@@ -72,10 +72,10 @@ for all environment variables.
 
 1. Open the repo page > **Actions** tab.
 2. Select **Build multi-arch images** in the left sidebar.
-3. Click **Run workflow** (top right). Optional inputs:
-   - `tag` — build a specific upstream tag, e.g. `v1.0.2` (empty = latest release)
-   - `force` — rebuild even if the version was already built
+3. Click **Run workflow** (top right).
+   - Leave `tag` empty to automatically fetch, build, and overwrite with the latest upstream release.
+   - Or optionally specify an older tag (e.g. `v1.0.2`) to rebuild that specific version.
 4. Click the green **Run workflow** button.
 
-Note: the arm64 leg builds under QEMU emulation, so a full run can take tens of
-minutes. That is expected for a weekly job.
+Note: the arm64 leg builds under QEMU emulation, so a full multi-arch build can take tens of
+minutes when triggered. Hourly checks where no new release was published finish in seconds.

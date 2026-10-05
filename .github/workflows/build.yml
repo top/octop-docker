@@ -1,8 +1,8 @@
 name: Build multi-arch images
 
-# Weekly check of upstream TencentCloud/Octop releases.
+# Hourly check of upstream TencentCloud/Octop releases.
 # Builds linux/amd64 + linux/arm64 images and pushes them to Docker Hub
-# only when a new upstream release is found.
+# whenever a new upstream release is found.
 #
 # Required repository secrets (Settings > Secrets and variables > Actions):
 #   DOCKERHUB_USERNAME - Docker Hub username, also used as the image namespace
@@ -11,19 +11,14 @@ name: Build multi-arch images
 
 on:
   schedule:
-    # Every Monday 09:00 MDT (15:00 UTC)
-    - cron: "0 15 * * 1"
+    # Runs every hour at minute 20 (picks up upstream releases within ~1h, avoids minute 0 queue peak)
+    - cron: "20 * * * *"
   workflow_dispatch:
     inputs:
       tag:
         description: "Upstream tag to build, e.g. v1.0.2 (empty = latest release)"
         required: false
         default: ""
-      force:
-        description: "Rebuild even if the version is unchanged"
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   contents: write # write back LAST_BUILD with the built version
@@ -69,8 +64,14 @@ jobs:
           last_built="$(cat LAST_BUILD 2>/dev/null || echo none)"
           echo "last built: $last_built"
 
-          should_build=true
-          if [ -z "${{ inputs.tag }}" ] && [ "${{ inputs.force }}" != "true" ] && [ "$tag" = "$last_built" ]; then
+          # Decide whether to build:
+          # - Manual trigger (workflow_dispatch): always build and overwrite Docker Hub
+          # - Scheduled trigger (cron): build only when a new release tag is detected
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            should_build=true
+          elif [ "$tag" != "$last_built" ]; then
+            should_build=true
+          else
             should_build=false
           fi
 
