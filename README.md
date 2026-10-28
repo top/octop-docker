@@ -13,13 +13,13 @@ ARM servers, Apple Silicon, ...) can run it directly.
 ## Pull
 
 ```bash
-docker pull <your-dockerhub-username>/octop:latest
+docker pull tozp/octop:latest
 ```
 
 A specific version:
 
 ```bash
-docker pull <your-dockerhub-username>/octop:1.0.2
+docker pull tozp/octop:1.0.2
 ```
 
 ## Run
@@ -30,7 +30,7 @@ docker run -d \
   -p 8088:8088 \
   -v octop-data:/data/.octop \
   -e HOME=/data \
-  <your-dockerhub-username>/octop:latest
+  tozp/octop:latest
 ```
 
 Open `http://localhost:8088`. On first boot the container runs `octop init`
@@ -58,7 +58,8 @@ for all environment variables.
 
 ## Setup
 
-1. Create an empty **public** repo `tozp/octop-docker` on GitHub and push these files.
+1. To run your own copy of this pipeline, fork this repo (or create an empty **public**
+   repo and push these files).
    (Public repos get unlimited free Actions minutes; a private repo's free quota
    can be eaten up by the long multi-arch builds.)
 2. Docker Hub > Account Settings > Security > Personal access tokens > Generate
